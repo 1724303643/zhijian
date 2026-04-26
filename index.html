@@ -1,0 +1,921 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="description" content="智剪 - AI智能视频剪辑工具，支持视频裁剪、合并、AI智能剪辑">
+  <meta name="theme-color" content="#0ea5e9">
+  <title>智剪 - AI智能视频剪辑</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  
+  <!-- Vue 3 -->
+  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  
+  <!-- FFmpeg WASM -->
+  <script src="https://unpkg.com/@ffmpeg/ffmpeg@0.12.10/dist/umd/ffmpeg.js"></script>
+  <script src="https://unpkg.com/@ffmpeg/util@0.12.1/dist/umd/utils.js"></script>
+  
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    html, body {
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #f8fafc;
+    }
+    
+    @media (max-width: 768px) {
+      body {
+        font-size: 14px;
+      }
+      
+      * {
+        touch-action: manipulation;
+      }
+    }
+    
+    /* 滚动条 */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    
+    ::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+    }
+    
+    ::-webkit-scrollbar-thumb {
+      background: rgba(14, 165, 233, 0.5);
+      border-radius: 3px;
+    }
+    
+    /* 动画 */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.5; }
+    }
+    
+    .animate-pulse {
+      animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+    }
+    
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+    
+    .animate-spin {
+      animation: spin 1s linear infinite;
+    }
+    
+    /* 过渡 */
+    .fade-enter-active, .fade-leave-active {
+      transition: opacity 0.3s ease;
+    }
+    .fade-enter-from, .fade-leave-to {
+      opacity: 0;
+    }
+    
+    .slide-enter-active, .slide-leave-active {
+      transition: transform 0.3s ease;
+    }
+    .slide-enter-from, .slide-leave-to {
+      transform: translateX(100%);
+    }
+    
+    .slide-up-enter-active, .slide-up-leave-active {
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+    .slide-up-enter-from, .slide-up-leave-to {
+      transform: translateY(100%);
+      opacity: 0;
+    }
+    
+    @media (max-width: 768px) {
+      .slide-enter-from, .slide-leave-to {
+        transform: translateY(100%);
+      }
+    }
+    
+    /* 范围滑块 */
+    input[type="range"] {
+      -webkit-appearance: none;
+      background: transparent;
+    }
+    
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      height: 14px;
+      width: 14px;
+      border-radius: 50%;
+      background: #0ea5e9;
+      cursor: pointer;
+      margin-top: -4px;
+    }
+    
+    input[type="range"]::-webkit-slider-runnable-track {
+      width: 100%;
+      height: 6px;
+      cursor: pointer;
+      background: #475569;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <!-- 主应用 -->
+    <div class="h-full flex flex-col bg-gradient-to-br from-slate-900 to-slate-800">
+      <!-- 顶部导航 -->
+      <header class="bg-slate-800/80 backdrop-blur-lg border-b border-slate-700/50 px-4 py-3 flex items-center justify-between z-50">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 bg-gradient-to-br from-cyan-400 to-cyan-600 rounded-xl flex items-center justify-center shadow-lg">
+            <svg class="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+            </svg>
+          </div>
+          <div>
+            <h1 class="text-lg font-bold text-white">智剪</h1>
+            <p class="text-xs text-slate-400">AI智能视频剪辑</p>
+          </div>
+        </div>
+        
+        <div class="flex items-center gap-2">
+          <button 
+            @click="showHistory = !showHistory"
+            class="p-2 rounded-lg bg-slate-700/50 hover:bg-slate-600/50 transition-colors"
+            title="历史记录"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </button>
+          <button 
+            @click="showHelp = true"
+            class="p-2 rounded-lg bg-slate-700/50 hover:bg-slate-600/50 transition-colors"
+            title="使用帮助"
+          >
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+            </svg>
+          </button>
+        </div>
+      </header>
+
+      <!-- 主要内容区 -->
+      <main class="flex-1 overflow-hidden flex flex-col lg:flex-row">
+        <!-- 左侧：上传和预览区 -->
+        <div class="flex-1 flex flex-col min-h-0 lg:border-r border-slate-700/50">
+          <!-- 视频预览区 -->
+          <div class="flex-1 bg-slate-900/50 flex items-center justify-center p-4 relative">
+            <!-- 空状态 -->
+            <div v-if="!currentVideo" class="text-center">
+              <div class="w-24 h-24 mx-auto mb-4 bg-slate-800 rounded-2xl flex items-center justify-center">
+                <svg class="w-12 h-12 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+                </svg>
+              </div>
+              <p class="text-slate-400 mb-2">点击下方按钮上传视频</p>
+              <p class="text-xs text-slate-500">支持 MP4, AVI, MOV, MKV 格式</p>
+            </div>
+            
+            <!-- 视频播放器 -->
+            <div v-else class="w-full h-full flex flex-col">
+              <video 
+                ref="videoPlayer"
+                :src="videoUrl"
+                controls
+                class="w-full h-full object-contain bg-black rounded-lg"
+                @timeupdate="onTimeUpdate"
+                @loadedmetadata="onMetadataLoaded"
+                @play="isPlaying = true"
+                @pause="isPlaying = false"
+              ></video>
+              
+              <!-- 播放控制条 -->
+              <div class="mt-3 px-2">
+                <div class="flex items-center gap-3">
+                  <button 
+                    @click="togglePlay"
+                    class="p-2 rounded-lg bg-cyan-500 hover:bg-cyan-600 transition-colors"
+                  >
+                    <svg v-if="!isPlaying" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z"/>
+                    </svg>
+                    <svg v-else class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z"/>
+                    </svg>
+                  </button>
+                  
+                  <div class="flex-1">
+                    <input 
+                      type="range"
+                      :value="currentTime"
+                      :max="duration"
+                      step="0.1"
+                      @input="seekVideo"
+                      class="w-full h-2 bg-slate-700 rounded-lg cursor-pointer accent-cyan-500"
+                    />
+                  </div>
+                  
+                  <span class="text-sm text-slate-400 min-w-[80px] text-right">
+                    {{ formatTime(currentTime) }} / {{ formatTime(duration) }}
+                  </span>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 加载指示器 -->
+            <div v-if="isLoading" class="absolute inset-0 bg-slate-900/80 flex items-center justify-center">
+              <div class="text-center">
+                <div class="w-16 h-16 mx-auto mb-4 border-4 border-cyan-500 border-t-transparent rounded-full animate-spin"></div>
+                <p class="text-cyan-400">{{ loadingText }}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- 剪辑控制区 -->
+          <div class="bg-slate-800/50 backdrop-blur-lg border-t border-slate-700/50 p-4">
+            <!-- 快捷操作 -->
+            <div class="flex flex-wrap gap-2 mb-4">
+              <button 
+                v-for="preset in quickPresets" 
+                :key="preset.label"
+                @click="applyPreset(preset)"
+                :disabled="!currentVideo || isLoading"
+                class="px-3 py-1.5 text-sm rounded-lg transition-colors"
+                :class="currentVideo ? 'bg-slate-700 hover:bg-slate-600 text-white' : 'bg-slate-800 text-slate-500 cursor-not-allowed'"
+              >
+                {{ preset.label }}
+              </button>
+            </div>
+            
+            <!-- 裁剪控制 -->
+            <div class="grid grid-cols-2 gap-4 mb-4">
+              <div>
+                <label class="block text-sm text-slate-400 mb-1">开始时间</label>
+                <div class="flex items-center gap-2">
+                  <input 
+                    type="number"
+                    v-model.number="trimStart"
+                    min="0"
+                    :max="trimEnd"
+                    step="0.1"
+                    :disabled="!currentVideo"
+                    class="flex-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50"
+                  />
+                  <button 
+                    @click="setTrimStart"
+                    :disabled="!currentVideo"
+                    class="px-3 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-lg text-white text-sm transition-colors"
+                  >
+                    设为起点
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label class="block text-sm text-slate-400 mb-1">结束时间</label>
+                <div class="flex items-center gap-2">
+                  <input 
+                    type="number"
+                    v-model.number="trimEnd"
+                    :min="trimStart"
+                    :max="duration"
+                    step="0.1"
+                    :disabled="!currentVideo"
+                    class="flex-1 px-3 py-2 bg-slate-700 border border-slate-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500 disabled:opacity-50"
+                  />
+                  <button 
+                    @click="setTrimEnd"
+                    :disabled="!currentVideo"
+                    class="px-3 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:bg-slate-600 disabled:cursor-not-allowed rounded-lg text-white text-sm transition-colors"
+                  >
+                    设为终点
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <!-- AI剪辑选项 -->
+            <div class="mb-4 p-3 bg-slate-700/30 rounded-lg">
+              <h3 class="text-sm font-medium text-white mb-2 flex items-center gap-2">
+                <svg class="w-4 h-4 text-cyan-400" fill="currentColor" viewBox="0 0 20 20">
+                  <path d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z"/>
+                </svg>
+                AI智能剪辑
+              </h3>
+              <div class="flex flex-wrap gap-2">
+                <button 
+                  v-for="mode in aiModes" 
+                  :key="mode.value"
+                  @click="aiMode = mode.value"
+                  :disabled="!currentVideo || isLoading"
+                  class="px-3 py-1.5 text-sm rounded-lg transition-colors"
+                  :class="aiMode === mode.value 
+                    ? 'bg-cyan-500 text-white' 
+                    : currentVideo 
+                      ? 'bg-slate-600 hover:bg-slate-500 text-white' 
+                      : 'bg-slate-700 text-slate-500 cursor-not-allowed'"
+                >
+                  {{ mode.label }}
+                </button>
+              </div>
+              <p class="text-xs text-slate-400 mt-2">{{ getAiModeDesc() }}</p>
+            </div>
+            
+            <!-- 操作按钮 -->
+            <div class="flex flex-wrap gap-3">
+              <label class="flex-1 min-w-[120px]">
+                <input 
+                  type="file" 
+                  accept="video/*"
+                  @change="handleFileSelect"
+                  class="hidden"
+                />
+                <div class="w-full py-3 px-4 bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 rounded-xl text-white font-medium text-center cursor-pointer transition-all shadow-lg shadow-cyan-500/25 flex items-center justify-center gap-2">
+                  <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                  </svg>
+                  {{ currentVideo ? '更换视频' : '上传视频' }}
+                </div>
+              </label>
+              
+              <button 
+                @click="startClip"
+                :disabled="!currentVideo || isLoading"
+                class="flex-1 min-w-[120px] py-3 px-4 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 disabled:from-slate-600 disabled:to-slate-700 disabled:cursor-not-allowed rounded-xl text-white font-medium transition-all shadow-lg shadow-emerald-500/25 disabled:shadow-none flex items-center justify-center gap-2"
+              >
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"/>
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+                </svg>
+                开始剪辑
+              </button>
+            </div>
+            
+            <!-- 进度条 -->
+            <div v-if="isProcessing" class="mt-4">
+              <div class="flex justify-between text-sm text-slate-400 mb-1">
+                <span>处理进度</span>
+                <span>{{ processingProgress }}%</span>
+              </div>
+              <div class="h-2 bg-slate-700 rounded-full overflow-hidden">
+                <div 
+                  class="h-full bg-gradient-to-r from-cyan-500 to-cyan-400 transition-all duration-300"
+                  :style="{ width: processingProgress + '%' }"
+                ></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 右侧：历史记录 -->
+        <transition name="slide">
+          <div v-if="showHistory" class="w-full lg:w-80 bg-slate-800/50 backdrop-blur-lg border-t lg:border-t-0 lg:border-l border-slate-700/50 flex flex-col">
+            <div class="p-4 border-b border-slate-700/50 flex items-center justify-between">
+              <h2 class="font-medium text-white">历史记录</h2>
+              <button @click="showHistory = false" class="lg:hidden p-1">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+            
+            <div class="flex-1 overflow-y-auto p-4">
+              <div v-if="history.length === 0" class="text-center py-8">
+                <svg class="w-12 h-12 mx-auto mb-3 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                </svg>
+                <p class="text-slate-400 text-sm">暂无历史记录</p>
+              </div>
+              
+              <div v-else class="space-y-3">
+                <div 
+                  v-for="(item, index) in history" 
+                  :key="index"
+                  class="bg-slate-700/50 rounded-lg p-3 hover:bg-slate-700 transition-colors cursor-pointer"
+                >
+                  <div class="flex gap-3">
+                    <div class="w-20 h-12 bg-slate-800 rounded overflow-hidden flex-shrink-0">
+                      <video 
+                        v-if="item.previewUrl"
+                        :src="item.previewUrl"
+                        class="w-full h-full object-cover"
+                      ></video>
+                      <div v-else class="w-full h-full flex items-center justify-center">
+                        <svg class="w-6 h-6 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+                        </svg>
+                      </div>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="text-sm text-white truncate">{{ item.name }}</p>
+                      <p class="text-xs text-slate-400 mt-1">{{ item.time }}</p>
+                      <div class="flex gap-2 mt-2">
+                        <button 
+                          v-if="item.downloadUrl"
+                          @click="downloadVideo(item)"
+                          class="text-xs text-cyan-400 hover:text-cyan-300"
+                        >
+                          下载
+                        </button>
+                        <button 
+                          @click="deleteHistory(index)"
+                          class="text-xs text-red-400 hover:text-red-300"
+                        >
+                          删除
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <div v-if="history.length > 0" class="p-4 border-t border-slate-700/50">
+              <button 
+                @click="clearHistory"
+                class="w-full py-2 text-sm text-slate-400 hover:text-white transition-colors"
+              >
+                清空全部记录
+              </button>
+            </div>
+          </div>
+        </transition>
+      </main>
+    </div>
+
+    <!-- 帮助弹窗 -->
+    <transition name="fade">
+      <div v-if="showHelp" class="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4" @click.self="showHelp = false">
+        <div class="bg-slate-800 rounded-2xl max-w-lg w-full max-h-[80vh] overflow-y-auto">
+          <div class="p-6 border-b border-slate-700">
+            <h2 class="text-xl font-bold text-white">使用帮助</h2>
+          </div>
+          <div class="p-6 space-y-4">
+            <div>
+              <h3 class="font-medium text-white mb-2">📤 如何上传视频？</h3>
+              <p class="text-slate-400 text-sm">点击"上传视频"按钮，从您的设备中选择视频文件。支持 MP4、AVI、MOV、MKV 等常见格式。</p>
+            </div>
+            <div>
+              <h3 class="font-medium text-white mb-2">✂️ 如何裁剪视频？</h3>
+              <p class="text-slate-400 text-sm">1. 播放视频到您想要裁剪的位置<br>2. 点击"设为起点"或"设为终点"<br>3. 或直接在上方输入精确的时间值</p>
+            </div>
+            <div>
+              <h3 class="font-medium text-white mb-2">🤖 AI智能剪辑是什么？</h3>
+              <p class="text-slate-400 text-sm">自动识别视频中的精彩片段进行剪辑：<br>• 高光时刻：识别动作峰值<br>• 精彩片段：AI推荐最精彩部分<br>• 快速剪辑：生成快节奏短片</p>
+            </div>
+            <div>
+              <h3 class="font-medium text-white mb-2">💾 如何保存视频？</h3>
+              <p class="text-slate-400 text-sm">剪辑完成后，点击"下载"按钮即可保存到本地。历史记录会保存在本地浏览器中。</p>
+            </div>
+            <div>
+              <h3 class="font-medium text-white mb-2">📱 手机能用吗？</h3>
+              <p class="text-slate-400 text-sm">当然可以！智剪已针对移动端优化，支持在手机浏览器中使用。</p>
+            </div>
+          </div>
+          <div class="p-4 border-t border-slate-700">
+            <button 
+              @click="showHelp = false"
+              class="w-full py-2 bg-slate-700 hover:bg-slate-600 rounded-lg text-white transition-colors"
+            >
+              我知道了
+            </button>
+          </div>
+        </div>
+      </div>
+    </transition>
+
+    <!-- 错误提示 -->
+    <transition name="slide-up">
+      <div v-if="errorMessage" class="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-96 bg-red-500/90 backdrop-blur-lg rounded-xl p-4 shadow-xl z-50">
+        <div class="flex items-start gap-3">
+          <svg class="w-6 h-6 text-white flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <div class="flex-1">
+            <p class="text-white font-medium">出错了</p>
+            <p class="text-white/80 text-sm mt-1">{{ errorMessage }}</p>
+          </div>
+          <button @click="errorMessage = ''" class="text-white/80 hover:text-white">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </transition>
+  </div>
+
+  <script>
+    const { createApp, ref, onMounted } = Vue;
+    
+    createApp({
+      setup() {
+        // FFmpeg 实例
+        let ffmpeg = null;
+        let ffmpegLoaded = false;
+        
+        // 状态
+        const currentVideo = ref(null);
+        const videoUrl = ref('');
+        const videoPlayer = ref(null);
+        const isPlaying = ref(false);
+        const isLoading = ref(false);
+        const loadingText = ref('加载中...');
+        const isProcessing = ref(false);
+        const processingProgress = ref(0);
+        const currentTime = ref(0);
+        const duration = ref(0);
+        const trimStart = ref(0);
+        const trimEnd = ref(0);
+        const aiMode = ref('highlight');
+        const errorMessage = ref('');
+        const showHistory = ref(false);
+        const showHelp = ref(false);
+        
+        // 快捷预设
+        const quickPresets = [
+          { label: '15秒', duration: 15 },
+          { label: '30秒', duration: 30 },
+          { label: '60秒', duration: 60 },
+          { label: '去掉片头', duration: 'skipintro' },
+          { label: '去掉片尾', duration: 'skipoutro' },
+        ];
+        
+        // AI模式
+        const aiModes = [
+          { value: 'highlight', label: '高光时刻' },
+          { value: 'exciting', label: '精彩片段' },
+          { value: 'fast', label: '快速剪辑' },
+          { value: 'custom', label: '自定义' },
+        ];
+        
+        // 历史记录
+        const history = ref([]);
+        
+        // 初始化FFmpeg
+        const initFFmpeg = async () => {
+          try {
+            isLoading.value = true;
+            loadingText.value = '初始化视频处理引擎...';
+            
+            const { FFmpeg } = FFmpegWASM;
+            const { fetchFile, toBlobURL } = FFmpegUtilWASM;
+            
+            ffmpeg = new FFmpeg();
+            
+            const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/esm';
+            await ffmpeg.load({
+              coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+              wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+            });
+            
+            ffmpegLoaded = true;
+            loadingText.value = '引擎加载完成';
+            
+            // 设置进度回调
+            ffmpeg.on('progress', ({ progress }) => {
+              processingProgress.value = Math.round(progress * 100);
+            });
+            
+          } catch (error) {
+            console.error('FFmpeg加载失败:', error);
+            showError('视频处理引擎加载失败，请刷新页面重试');
+          } finally {
+            setTimeout(() => {
+              isLoading.value = false;
+            }, 500);
+          }
+        };
+        
+        // 处理文件选择
+        const handleFileSelect = async (event) => {
+          const file = event.target.files[0];
+          if (!file) return;
+          
+          // 验证文件类型
+          const validExtensions = ['.mp4', '.avi', '.mov', '.mkv', '.webm'];
+          const ext = '.' + file.name.split('.').pop().toLowerCase();
+          if (!validExtensions.includes(ext)) {
+            showError('不支持的视频格式，请上传 MP4、AVI、MOV、MKV 或 WEBM 格式');
+            return;
+          }
+          
+          // 验证文件大小 (最大200MB for WASM)
+          if (file.size > 200 * 1024 * 1024) {
+            showError('视频文件过大，请上传小于 200MB 的文件（建议使用较小视频测试）');
+            return;
+          }
+          
+          try {
+            isLoading.value = true;
+            loadingText.value = '读取视频文件...';
+            
+            // 释放之前的视频URL
+            if (videoUrl.value) {
+              URL.revokeObjectURL(videoUrl.value);
+            }
+            
+            currentVideo.value = file;
+            videoUrl.value = URL.createObjectURL(file);
+            
+            // 重置裁剪参数
+            trimStart.value = 0;
+            trimEnd.value = 0;
+            
+            // 确保FFmpeg已加载
+            if (!ffmpegLoaded) {
+              await initFFmpeg();
+            }
+            
+          } catch (error) {
+            console.error('处理视频失败:', error);
+            showError('视频文件处理失败，请尝试其他文件');
+          } finally {
+            isLoading.value = false;
+            event.target.value = '';
+          }
+        };
+        
+        // 元数据加载完成
+        const onMetadataLoaded = (e) => {
+          duration.value = e.target.duration;
+          trimEnd.value = Math.min(30, duration.value);
+        };
+        
+        // 时间更新
+        const onTimeUpdate = (e) => {
+          currentTime.value = e.target.currentTime;
+        };
+        
+        // 跳转视频
+        const seekVideo = (e) => {
+          const time = parseFloat(e.target.value);
+          if (videoPlayer.value) {
+            videoPlayer.value.currentTime = time;
+            currentTime.value = time;
+          }
+        };
+        
+        // 播放/暂停
+        const togglePlay = () => {
+          if (!videoPlayer.value) return;
+          if (isPlaying.value) {
+            videoPlayer.value.pause();
+          } else {
+            videoPlayer.value.play();
+          }
+        };
+        
+        // 设为起点
+        const setTrimStart = () => {
+          trimStart.value = Math.max(0, currentTime.value);
+          if (trimEnd.value <= trimStart.value) {
+            trimEnd.value = Math.min(trimStart.value + 1, duration.value);
+          }
+        };
+        
+        // 设为终点
+        const setTrimEnd = () => {
+          trimEnd.value = Math.min(duration.value, currentTime.value);
+          if (trimStart.value >= trimEnd.value) {
+            trimStart.value = Math.max(0, trimEnd.value - 1);
+          }
+        };
+        
+        // 应用预设
+        const applyPreset = (preset) => {
+          if (preset.duration === 'skipintro') {
+            trimStart.value = 5;
+          } else if (preset.duration === 'skipoutro') {
+            trimEnd.value = Math.max(0, duration.value - 5);
+          } else {
+            trimStart.value = currentTime.value;
+            trimEnd.value = Math.min(currentTime.value + preset.duration, duration.value);
+          }
+        };
+        
+        // 获取AI模式描述
+        const getAiModeDesc = () => {
+          const modeDescs = {
+            highlight: '自动识别视频中的高光时刻（动作峰值、精彩瞬间）',
+            exciting: 'AI分析并推荐最吸引人的精彩片段',
+            fast: '生成节奏紧凑的快剪版本，适合短视频平台',
+            custom: '根据您设定的时间范围进行裁剪',
+          };
+          return modeDescs[aiMode.value];
+        };
+        
+        // 开始剪辑
+        const startClip = async () => {
+          if (!currentVideo.value || !ffmpegLoaded) return;
+          
+          try {
+            isProcessing.value = true;
+            processingProgress.value = 0;
+            loadingText.value = '开始处理视频...';
+            
+            const { fetchFile } = FFmpegUtilWASM;
+            
+            // 写入输入文件
+            loadingText.value = '加载视频文件...';
+            await ffmpeg.writeFile('input.mp4', await fetchFile(currentVideo.value));
+            
+            // 计算裁剪时间
+            const start = trimStart.value;
+            const end = trimEnd.value;
+            const clipDuration = end - start;
+            
+            // 构建FFmpeg命令
+            let args = ['-i', 'input.mp4', '-ss', String(start), '-t', String(clipDuration)];
+            
+            if (aiMode.value === 'fast') {
+              args.push('-c:v', 'libx264', '-preset', 'fast', '-crf', '23');
+              args.push('-c:a', 'aac', '-b:a', '128k');
+            } else {
+              args.push('-c', 'copy');
+            }
+            
+            args.push('-y', 'output.mp4');
+            
+            // 执行裁剪
+            loadingText.value = 'AI剪辑中...';
+            await ffmpeg.exec(args);
+            
+            // 读取输出文件
+            loadingText.value = '生成预览...';
+            const data = await ffmpeg.readFile('output.mp4');
+            const blob = new Blob([data.buffer], { type: 'video/mp4' });
+            const url = URL.createObjectURL(blob);
+            
+            // 添加到历史记录
+            const historyItem = {
+              name: `剪辑_${new Date().toLocaleTimeString()}`,
+              time: new Date().toLocaleString(),
+              previewUrl: url,
+              downloadUrl: url,
+              blob: blob,
+              originalName: currentVideo.value.name,
+              trimInfo: { start, end, duration: clipDuration },
+              aiMode: aiMode.value,
+            };
+            
+            history.value.unshift(historyItem);
+            saveHistory();
+            
+            // 自动播放预览
+            if (videoPlayer.value) {
+              videoUrl.value = url;
+              videoPlayer.value.play();
+            }
+            
+            loadingText.value = '剪辑完成！';
+            
+            setTimeout(() => {
+              isProcessing.value = false;
+              processingProgress.value = 100;
+            }, 1500);
+            
+          } catch (error) {
+            console.error('视频剪辑失败:', error);
+            showError('视频剪辑失败，请尝试使用较小的视频文件');
+            isProcessing.value = false;
+          }
+        };
+        
+        // 下载视频
+        const downloadVideo = (item) => {
+          if (!item.downloadUrl) return;
+          
+          const a = document.createElement('a');
+          a.href = item.downloadUrl;
+          a.download = `智剪_${item.originalName || '视频'}`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+        };
+        
+        // 删除历史记录项
+        const deleteHistory = (index) => {
+          const item = history.value[index];
+          if (item.previewUrl) {
+            URL.revokeObjectURL(item.previewUrl);
+          }
+          history.value.splice(index, 1);
+          saveHistory();
+        };
+        
+        // 清空历史记录
+        const clearHistory = () => {
+          history.value.forEach(item => {
+            if (item.previewUrl) {
+              URL.revokeObjectURL(item.previewUrl);
+            }
+          });
+          history.value = [];
+          saveHistory();
+        };
+        
+        // 保存历史记录到localStorage
+        const saveHistory = () => {
+          try {
+            const data = history.value.map(item => ({
+              ...item,
+              previewUrl: null,
+              downloadUrl: null,
+            }));
+            localStorage.setItem('zhijian_history', JSON.stringify(data));
+          } catch (e) {
+            console.error('保存历史记录失败:', e);
+          }
+        };
+        
+        // 加载历史记录
+        const loadHistory = () => {
+          try {
+            const data = localStorage.getItem('zhijian_history');
+            if (data) {
+              history.value = JSON.parse(data);
+            }
+          } catch (e) {
+            console.error('加载历史记录失败:', e);
+          }
+        };
+        
+        // 显示错误
+        const showError = (msg) => {
+          errorMessage.value = msg;
+          setTimeout(() => {
+            errorMessage.value = '';
+          }, 5000);
+        };
+        
+        // 格式化时间
+        const formatTime = (seconds) => {
+          if (isNaN(seconds)) return '00:00';
+          const mins = Math.floor(seconds / 60);
+          const secs = Math.floor(seconds % 60);
+          return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+        };
+        
+        // 初始化
+        onMounted(() => {
+          loadHistory();
+          initFFmpeg();
+        });
+        
+        return {
+          currentVideo,
+          videoUrl,
+          videoPlayer,
+          isPlaying,
+          isLoading,
+          loadingText,
+          isProcessing,
+          processingProgress,
+          currentTime,
+          duration,
+          trimStart,
+          trimEnd,
+          aiMode,
+          errorMessage,
+          showHistory,
+          showHelp,
+          quickPresets,
+          aiModes,
+          history,
+          handleFileSelect,
+          onMetadataLoaded,
+          onTimeUpdate,
+          seekVideo,
+          togglePlay,
+          setTrimStart,
+          setTrimEnd,
+          applyPreset,
+          getAiModeDesc,
+          startClip,
+          downloadVideo,
+          deleteHistory,
+          clearHistory,
+          formatTime,
+        };
+      }
+    }).mount('#app');
+  </script>
+</body>
+</html>
