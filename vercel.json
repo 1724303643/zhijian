@@ -4,5 +4,14 @@
       "source": "/api/:path*",
       "destination": "/api/index.py"
     }
+  ],
+  "routes": [
+    {
+      "handle": "filesystem"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/index.html"
+    }
   ]
 }
